@@ -1,0 +1,106 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/payments
+
+spring:
+  application:
+    name: payments-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments_db
+    username: payments_user
+    password: payments_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+        connection:
+          provider_disables_autocommit: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      riskAssessment:
+        baseConfig: default
+        failureRateThreshold: 60
+        waitDurationInOpenState: 5000
+        permittedNumberOfCallsInHalfOpenState: 5
+        slidingWindowSize: 10
+      bankingCore:
+        baseConfig: default
+        failureRateThreshold: 40
+        waitDurationInOpenState: 3000
+      paymentGateway:
+        baseConfig: default
+        failureRateThreshold: 30
+        waitDurationInOpenState: 2000
+  timelimiter:
+    instances:
+      riskAssessment:
+        timeoutDuration: 2500ms
+      bankingCore:
+        timeoutDuration: 1500ms
+      paymentGateway:
+        timeoutDuration: 1000ms
+  retry:
+    instances:
+      riskAssessment:
+        maxRetryAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - org.springframework.web.client.HttpServerErrorException
+          - org.springframework.web.client.ResourceAccessException
+          - com.pragma.payments.domain.exception.PaymentTimeoutException
+      bankingCore:
+        maxRetryAttempts: 3
+        waitDuration: 300ms
+      paymentGateway:
+        maxRetryAttempts: 2
+        waitDuration: 200ms
+  ratelimiter:
+    instances:
+      riskAssessment:
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 100ms
+      paymentProcessing:
+        limitForPeriod: 1500
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,200ms,500ms
+
+logging:
+  level:
+    root: INFO
+    com.pragma.payments: DEBUG
+    org.springframework.web: INFO
+    org.hibernate: ERROR
+    io.github.resilience4j: INFO

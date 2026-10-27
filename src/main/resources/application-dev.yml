@@ -1,0 +1,159 @@
+spring:
+  application:
+    name: payments
+  config:
+    import: optional:file:./secrets/application-secrets.yml
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments_dev
+    username: payments_dev_user
+    password: payments_dev_pass
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+aws:
+  region: us-east-1
+  sqs:
+    payment-events-queue-url: https://sqs.us-east-1.amazonaws.com/123456789012/payment-events-dev
+    endpoint: http://localhost:4566
+    access-key: local-dev-access-key
+    secret-key: local-dev-secret-key
+    max-number-of-messages: 10
+    wait-time-seconds: 20
+    visibility-timeout-seconds: 30
+
+services:
+  fraud-detection:
+    url: http://localhost:8081/api/v1/fraud-detection
+    connection-timeout: 5000
+    read-timeout: 10000
+    max-connections: 50
+  risk-assessment:
+    url: http://localhost:8082/api/v1/risk-assessment
+    connection-timeout: 10000
+    read-timeout: 25000
+    max-connections: 30
+  banking-core:
+    url: http://localhost:8083/api/v1/banking-core
+    connection-timeout: 8000
+    read-timeout: 15000
+    max-connections: 100
+  payment-gateway:
+    url: http://localhost:8084/api/v1/payment-gateway
+    connection-timeout: 5000
+    read-timeout: 10000
+    max-connections: 50
+
+resilience4j:
+  instances:
+    fraudDetectionService:
+      retry:
+        maxAttempts: 3
+        waitDuration: 500ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.ResourceAccessException
+      circuitBreaker:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+        eventConsumerBufferSize: 10
+      rateLimiter:
+        registerHealthIndicator: true
+        limitForPeriod: 100
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0
+    riskAssessmentService:
+      retry:
+        maxAttempts: 2
+        waitDuration: 1000ms
+        retryExceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+      circuitBreaker:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 3
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 60s
+        failureRateThreshold: 40
+      timeLimiter:
+        timeoutDuration: 5s
+        cancelRunningFuture: true
+    bankingCoreService:
+      retry:
+        maxAttempts: 3
+        waitDuration: 1000ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 1.5
+      circuitBreaker:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+    paymentGateway:
+      retry:
+        maxAttempts: 2
+        waitDuration: 500ms
+      circuitBreaker:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 50
+
+logging:
+  level:
+    root: INFO
+    com.pragma.payments: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    com.amazonaws: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
+    max-connections: 10000
+    accept-count: 100
+    connection-timeout: 20000
